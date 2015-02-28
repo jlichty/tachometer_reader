@@ -136,12 +136,14 @@ void setup() {
 void loop() {
   serial.update();
   
+ if (!stopped_flag && timeFromLastPulse>0) {
+    tach_speed = 3750000 / timeFromLastPulse;
+    servo_angle = servo_angle + (int8_t)(Kp*LSF*(setpoint_speed - tach_speed));
+    servo_angle = min(max(servo_angle,LOWER_SERVO_TH),UPPER_SERVO_TH);
+    //servo.write(servo_angle);
+  }
+  
   if (timer_interrupt_flag) {
-    if (!stopped_flag && timeFromLastPulse>0) {
-      tach_speed = 3750000 / timeFromLastPulse;
-    } else {
-      tach_speed = 0;
-    }
     
     // WRITE TO BUFFEREDSERIAL
     send_buffer.clear();
