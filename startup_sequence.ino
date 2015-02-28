@@ -90,12 +90,12 @@ void setup() {
 }
 
 void loop() {
-
+/*
   digitalWrite(Esc_Gen_Load,HIGH);  
   delay(500);
   digitalWrite(Esc_Gen_Load,LOW);  
   delay(500);
-  
+  */
   serial.update();
   if (controller_update_flag) {
     controller_update_flag = 0;
