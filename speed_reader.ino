@@ -8,14 +8,21 @@ BufferedSerial serial = BufferedSerial(256, 256);
 ByteBuffer send_buffer;
 
 //Use Arduino MEGA
-volatile uint16_t timeFromLastPulse =0;//holds value since last pulse
+volatile uint16_t timeFromLastPulse = 0;//holds value since last pulse
 volatile uint8_t stopped_flag = 0; 
 volatile uint8_t timer_interrupt_flag = 0;
-volatile uint16_t lowPulseTime=0;
-volatile uint8_t servo_angle=0;
-volatile uint32_t tach_speed=0;
+volatile uint16_t lowPulseTime = 0;
+
+//***PID***
+volatile uint32_t tach_speed = 0;
+uint32_t setpoint_speed = 7400;
+const float Kp = 1;
+const float LSF = 0.002;
+const uint32_t UPPER_RPM_TH = 8000;
+const uint32_t LOWER_RPM_TH = 500;
 
 Servo servo;
+volatile uint8_t servo_angle=0;
 const uint8_t UPPER_SERVO_TH = 150;
 const uint8_t LOWER_SERVO_TH = 130;
 
@@ -110,7 +117,14 @@ void sendSerial_Timer_ISR() { //trigger every certain amount of time
 
 void handlePacket(ByteBuffer* packet) {
   send_buffer.clear();
-  servo_angle = min(max((uint8_t)packet->getFloat(),UPPER_SERVO_TH),LOWER_SERVO_TH);
+  int protocol = (int)packet->getFloat();
+  if (protocol == 1) {
+    servo_angle = (uint8_t)packet->getFloat();
+    servo_angle = min(max(servo_angle,LOWER_SERVO_TH),UPPER_SERVO_TH);
+  } else if (protocol == 2) {
+    setpoint_speed = (uint32_t)packet->getFloat();
+    setpoint_speed = min(max(setpoint_speed,LOWER_RPM_TH),UPPER_RPM_TH);
+  }
 }
 
 void setup() {
@@ -133,22 +147,18 @@ void setup() {
   DDRB |= (1<<PB5); //pin 11 as output
 }
 
-const uint32_t setpoint_speed = 7400;
-const float Kp = 1;
-const float LSF = 0.002;
-
 void loop() {
   serial.update();
   
- if (!stopped_flag && timeFromLastPulse>0) {
+  if (!stopped_flag && timeFromLastPulse>0) {
     tach_speed = 3750000 / timeFromLastPulse;
-    servo_angle = servo_angle + (int8_t)(Kp*LSF*(setpoint_speed - tach_speed));
+    servo_angle = servo_angle + (uint8_t)(Kp*LSF*(setpoint_speed - tach_speed));
     servo_angle = min(max(servo_angle,LOWER_SERVO_TH),UPPER_SERVO_TH);
     //servo.write(servo_angle);
   }
   
   if (timer_interrupt_flag) {
-    
+
     // WRITE TO BUFFEREDSERIAL
     send_buffer.clear();
     send_buffer.putFloat((float)tach_speed);
