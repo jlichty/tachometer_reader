@@ -133,6 +133,10 @@ void setup() {
   DDRB |= (1<<PB5); //pin 11 as output
 }
 
+const uint32_t setpoint_speed = 7400;
+const float Kp = 1;
+const float LSF = 0.002;
+
 void loop() {
   serial.update();
   
