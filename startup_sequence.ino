@@ -12,6 +12,21 @@ volatile uint16_t timeFromLastPulse = 0;//holds value since last pulse
 volatile uint8_t stopped_flag = 0; 
 volatile uint16_t lowPulseTime = 0;
 
+// Pin Configuration Section
+const int startPin=5;        //Switch that keeps genset on
+const int escPowerOn=2;      //Powers up ESC
+const int escToGenerator=3;  //HIGH: ESC powers the generator. LOW: Generator send power to rectifier.
+const int escThrottlePin=4;
+const int engine_throttle_pin = 9;
+const int choke_pin = 10;
+
+//***START SEQUENCE***
+volatile uint8_t vehicleState = 0;
+const uint32_t callibration_delay = 20000;
+#define MOTOR_INITIALIZATION_DELAY 4000 //Delay for motor to recognize ESC
+const uint32_t startup_RPM_threshold = 1000;
+Servo start_sequence_servo;
+
 //***PID***
 volatile uint32_t tach_speed = 0;
 uint32_t setpoint_speed = 7400;
@@ -26,20 +41,18 @@ volatile uint8_t controller_update_flag = 0;
 const uint8_t serial_write_threshold = 1000000/timer1_duration - 1;
 
 //Create object for servo library
+Servo choke_servo;
 Servo engine_throttle_servo;
 volatile uint8_t servo_angle=0;
 const uint8_t UPPER_SERVO_TH = 150;
 const uint8_t LOWER_SERVO_TH = 130;
 
-Servo choke_servo;
-Servo esc_throttle_servo;
-
 void initialize_servo() { //function to initialize servo motors
   cli();
   // INIT SERVOS
+  start_sequence_servo.attach(escThrottlePin);
   engine_throttle_servo.attach(9);
   choke_servo.attach(10);
-  esc_throttle_servo.attach(11);
   sei();
 }
 
@@ -83,32 +96,74 @@ void setup() {
   serial.setPacketHandler(handlePacket);
   send_buffer.init(64);
   
-  pinMode(Esc_Gen_Load, OUTPUT);
-  pinMode(Gen_Esc_Rotor, OUTPUT);
-  pinMode(Esc_Power, OUTPUT);
-  pinMode(Ecu_Power, OUTPUT);
+  pinMode(startPin, INPUT);
+  pinMode(escPowerOn, OUTPUT);
+  pinMode(escToGenerator, OUTPUT);
+  pinMode(escThrottlePin, OUTPUT);
 }
 
 void loop() {
-/*
-  digitalWrite(Esc_Gen_Load,HIGH);  
-  delay(500);
-  digitalWrite(Esc_Gen_Load,LOW);  
-  delay(500);
-  */
   serial.update();
-  if (controller_update_flag) {
-    controller_update_flag = 0;
+  
+  // START SECTION
+  // This portion of the script outlines several conditions for
+  // starting and stopping the genset, as well as keeping it on.
+  // It will do so by diverting power to the motor via relays,
+  // and by maintaining a constant RPM with servo control.
+  if (vehicleState == 1) {
+    digitalWrite(escToGenerator, HIGH);    // Switch Relays over to power motor
+    delay(MOTOR_INITIALIZATION_DELAY/4);   // Wait for ESC/Motor Response
+    digitalWrite(escPowerOn, HIGH);        // Switch on ESC
+    //analogWrite(throttlePin,250);          // Upper Bound ESC Calibration
+    
+    // 3% PWM           
+    start_sequence_servo.write((int)0.03*180);
+    delayMicroseconds(callibration_delay); 
+    
+    // 100% PWM
+    start_sequence_servo.write((int)1.0*180);
+    delayMicroseconds(callibration_delay);
+    
+    // 3% PWM           
+    start_sequence_servo.write((int)0.03*180);
+    delayMicroseconds(callibration_delay);        
+    
+    vehicleState = 2;    
+  }
+  
+  if (vehicleState == 2) {
+    // 80% PWM    
+    start_sequence_servo.write((int)0.8*180);
     if (!stopped_flag && timeFromLastPulse>0) {
-      tach_speed = 3750000 / timeFromLastPulse;
-      servo_angle = servo_angle + (uint8_t)(Kp*LSF*(setpoint_speed - tach_speed));
-      servo_angle = min(max(servo_angle,LOWER_SERVO_TH),UPPER_SERVO_TH);
-      //servo.write(servo_angle);
-    } else {
-      tach_speed = 0;
+        tach_speed = 3750000 / timeFromLastPulse;
+        if (tach_speed > startup_RPM_threshold) {
+          digitalWrite(escPowerOn, LOW);        // Switch off ESC
+          digitalWrite(escToGenerator, LOW);    // Switch Relays over to diode bridge
+          vehicleState = 3;
+        }
+      } else {
+        tach_speed = 0;
+      }  
+  }
+  
+  if (vehicleState == 3) {
+    if (controller_update_flag) {
+      controller_update_flag = 0;
+      if (!stopped_flag && timeFromLastPulse>0) {
+        tach_speed = 3750000 / timeFromLastPulse;
+        servo_angle = servo_angle + (uint8_t)(Kp*LSF*(setpoint_speed - tach_speed));
+        servo_angle = min(max(servo_angle,LOWER_SERVO_TH),UPPER_SERVO_TH);
+        //engine_throttle_servo.write(servo_angle);
+      } else {
+        tach_speed = 0;
+      }
     }
   }
   
+  if (vehicleState == 4) {
+    // kill motor
+  }
+ 
   if (serial_write_counter >= serial_write_threshold) {
     serial_write_counter = 0;
     
@@ -116,8 +171,9 @@ void loop() {
     send_buffer.clear();
     send_buffer.putFloat((float)tach_speed);
     send_buffer.putFloat((float)servo_angle);
+    send_buffer.putFloat((float)vehicleState);
     serial.sendSerialPacket( &send_buffer );
-  }
+  } 
 }
 
 //ISRs
@@ -161,5 +217,8 @@ void handlePacket(ByteBuffer* packet) {
   } else if (protocol == 2) {
     setpoint_speed = (uint32_t)packet->getFloat();
     setpoint_speed = min(max(setpoint_speed,LOWER_RPM_TH),UPPER_RPM_TH);
+  } else if (protocol == 3) {
+    vehicleState = (uint32_t)packet->getFloat();
+    vehicleState = min(max(setpoint_speed,0),2);
   }
 }
