@@ -64,8 +64,8 @@ void initialize_servo() { //function to initialize servo motors
   cli();
   // INIT SERVOS
   start_sequence_servo.attach(escThrottlePin);
-  engine_throttle_servo.attach(9);
-  choke_servo.attach(10);
+  engine_throttle_servo.attach(engine_throttle_pin);
+  choke_servo.attach(choke_pin);
   sei();
 }
 
@@ -94,6 +94,10 @@ void initialize_timers() {
   sei();//reenable interrupts
 }
 
+#define Esc_Gen_Load A1
+#define Gen_Esc_Rotor A2
+#define Esc_Power A3
+#define Ecu_Power A0
 
 void setup() {
   initialize_servo();
@@ -121,6 +125,7 @@ void loop() {
   // and by maintaining a constant RPM with servo control.
   if (vehicleState == 1) {
     digitalWrite(Esc_Gen_Load, HIGH);    // Switch Relays over to power motor
+    digitalWrite(Ecu_Power, HIGH);
     delay(MOTOR_INITIALIZATION_DELAY/4);   // Wait for ESC/Motor Response
     digitalWrite(Esc_Power, HIGH);        // Switch on ESC
     //analogWrite(throttlePin,250);          // Upper Bound ESC Calibration
@@ -211,7 +216,6 @@ ISR(TIMER5_OVF_vect) { // counter overflow/timeout. Basically this will happen i
   PORTB ^= 1 << PORTB7; //blink
 }     // engine stopped
 
-
 void setFlags_Timer_ISR() { // trigger every certain amount of time
   controller_update_flag = 1;
   serial_write_counter += 1;
@@ -228,6 +232,6 @@ void handlePacket(ByteBuffer* packet) {
     setpoint_speed = min(max(setpoint_speed,LOWER_RPM_TH),UPPER_RPM_TH);
   } else if (protocol == 3) {
     vehicleState = (uint32_t)packet->getFloat();
-    vehicleState = min(max(setpoint_speed,0),2);
+    vehicleState = min(max(vehicleState,0),2);
   }
 }
