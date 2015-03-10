@@ -12,6 +12,7 @@ volatile uint16_t timeFromLastPulse = 0;//holds value since last pulse
 volatile uint8_t stopped_flag = 0; 
 volatile uint16_t lowPulseTime = 0;
 
+/*
 // Pin Configuration Section
 const int startPin=5;        //Switch that keeps genset on
 const int escPowerOn=2;      //Powers up ESC
@@ -19,6 +20,18 @@ const int escToGenerator=3;  //HIGH: ESC powers the generator. LOW: Generator se
 const int escThrottlePin=4;
 const int engine_throttle_pin = 9;
 const int choke_pin = 10;
+*/
+
+//relay pins
+#define Esc_Gen_Load A1 //HIGH: ESC powers the generator. LOW: Generator send power to rectifier.
+#define Gen_Esc_Rotor A2
+#define Esc_Power A3
+#define Ecu_Power A0
+
+//throttle pins
+#define engine_throttle_pin 9
+#define choke_pin 10
+#define escThrottlePin 4
 
 //***START SEQUENCE***
 volatile uint8_t vehicleState = 0;
@@ -96,9 +109,9 @@ void setup() {
   serial.setPacketHandler(handlePacket);
   send_buffer.init(64);
   
-  pinMode(startPin, INPUT);
-  pinMode(escPowerOn, OUTPUT);
-  pinMode(escToGenerator, OUTPUT);
+  pinMode(Ecu_Power, OUTPUT);
+  pinMode(Esc_Power, OUTPUT);
+  pinMode(Esc_Gen_Load, OUTPUT);
   pinMode(escThrottlePin, OUTPUT);
 }
 
@@ -111,9 +124,9 @@ void loop() {
   // It will do so by diverting power to the motor via relays,
   // and by maintaining a constant RPM with servo control.
   if (vehicleState == 1) {
-    digitalWrite(escToGenerator, HIGH);    // Switch Relays over to power motor
+    digitalWrite(Esc_Gen_Load, HIGH);    // Switch Relays over to power motor
     delay(MOTOR_INITIALIZATION_DELAY/4);   // Wait for ESC/Motor Response
-    digitalWrite(escPowerOn, HIGH);        // Switch on ESC
+    digitalWrite(Esc_Power, HIGH);        // Switch on ESC
     //analogWrite(throttlePin,250);          // Upper Bound ESC Calibration
     
     // 3% PWM           
@@ -137,8 +150,8 @@ void loop() {
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
         if (tach_speed > startup_RPM_threshold) {
-          digitalWrite(escPowerOn, LOW);        // Switch off ESC
-          digitalWrite(escToGenerator, LOW);    // Switch Relays over to diode bridge
+          digitalWrite(Esc_Power, LOW);        // Switch off ESC
+          digitalWrite(Esc_Gen_Load, LOW);    // Switch Relays over to diode bridge
           vehicleState = 3;
         }
       } else {
