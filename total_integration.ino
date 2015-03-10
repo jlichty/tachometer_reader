@@ -94,10 +94,6 @@ void initialize_timers() {
   sei();//reenable interrupts
 }
 
-#define Esc_Gen_Load A1
-#define Gen_Esc_Rotor A2
-#define Esc_Power A3
-#define Ecu_Power A0
 
 void setup() {
   initialize_servo();
