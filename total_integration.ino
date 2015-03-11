@@ -31,7 +31,8 @@ const int choke_pin = 10;
 //throttle pins
 #define engine_throttle_pin 9
 #define choke_pin 10
-#define escThrottlePin 4
+#define escThrottlePin A4
+#define DEBUG_LED 13
 
 //***START SEQUENCE***
 volatile uint8_t vehicleState = 0;
@@ -61,12 +62,13 @@ const uint8_t UPPER_SERVO_TH = 150;
 const uint8_t LOWER_SERVO_TH = 130;
 
 void initialize_servo() { //function to initialize servo motors
-  cli();
-  // INIT SERVOS
-  start_sequence_servo.attach(escThrottlePin);
-  engine_throttle_servo.attach(engine_throttle_pin);
-  choke_servo.attach(choke_pin);
-  sei();
+//  cli();
+//  // INIT SERVOS
+//  digitalWrite(DEBUG_LED,HIGH); 
+//  start_sequence_servo.attach(escThrottlePin);
+//  engine_throttle_servo.attach(engine_throttle_pin);
+//  choke_servo.attach(choke_pin);
+//  sei();
 }
 
 void initialize_timers() {
@@ -94,12 +96,13 @@ void initialize_timers() {
   sei();//reenable interrupts
 }
 
-#define Esc_Gen_Load A1
-#define Gen_Esc_Rotor A2
-#define Esc_Power A3
-#define Ecu_Power A0
+
 
 void setup() {
+  
+  pinMode(DEBUG_LED,OUTPUT);
+  digitalWrite(DEBUG_LED,LOW);
+  
   initialize_servo();
   initialize_timers();
   
@@ -113,6 +116,17 @@ void setup() {
   pinMode(Esc_Power, OUTPUT);
   pinMode(Esc_Gen_Load, OUTPUT);
   pinMode(escThrottlePin, OUTPUT);
+
+  delay(5000);
+  cli();
+  
+  start_sequence_servo.write((int)(0.03*180));
+  start_sequence_servo.attach(escThrottlePin);
+  engine_throttle_servo.attach(engine_throttle_pin);
+  choke_servo.attach(choke_pin);
+  sei();
+  
+  vehicleState=1;
 }
 
 void loop() {
@@ -124,6 +138,7 @@ void loop() {
   // It will do so by diverting power to the motor via relays,
   // and by maintaining a constant RPM with servo control.
   if (vehicleState == 1) {
+    
     digitalWrite(Esc_Gen_Load, HIGH);    // Switch Relays over to power motor
     digitalWrite(Ecu_Power, HIGH);
     delay(MOTOR_INITIALIZATION_DELAY/4);   // Wait for ESC/Motor Response
@@ -131,28 +146,25 @@ void loop() {
     //analogWrite(throttlePin,250);          // Upper Bound ESC Calibration
     
     // 3% PWM           
-    start_sequence_servo.write((int)0.03*180);
+    start_sequence_servo.write((int)(0.25*180));
     delayMicroseconds(callibration_delay); 
-    
-    // 100% PWM
-    start_sequence_servo.write((int)1.0*180);
-    delayMicroseconds(callibration_delay);
-    
-    // 3% PWM           
-    start_sequence_servo.write((int)0.03*180);
+    delay(5000);
+
     delayMicroseconds(callibration_delay);        
     
     vehicleState = 2;    
   }
   
   if (vehicleState == 2) {
-    // 80% PWM    
-    start_sequence_servo.write((int)0.8*180);
+    // 80% PWM   
+    digitalWrite(DEBUG_LED,HIGH);
+    start_sequence_servo.write((int)(0.7*180));
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
         if (tach_speed > startup_RPM_threshold) {
           digitalWrite(Esc_Power, LOW);        // Switch off ESC
           digitalWrite(Esc_Gen_Load, LOW);    // Switch Relays over to diode bridge
+          start_sequence_servo.write(0);
           vehicleState = 3;
         }
       } else {
@@ -161,6 +173,7 @@ void loop() {
   }
   
   if (vehicleState == 3) {
+    start_sequence_servo.write(0);
     if (controller_update_flag) {
       controller_update_flag = 0;
       if (!stopped_flag && timeFromLastPulse>0) {
@@ -213,7 +226,7 @@ ISR(TIMER5_CAPT_vect) { // PULSE DETECTED
 ISR(TIMER5_OVF_vect) { // counter overflow/timeout. Basically this will happen if the engine is stopped 
   stopped_flag = 1;
   timeFromLastPulse = 0xFFFF;
-  PORTB ^= 1 << PORTB7; //blink
+  //PORTB ^= 1 << PORTB7; //blink
 }     // engine stopped
 
 void setFlags_Timer_ISR() { // trigger every certain amount of time
