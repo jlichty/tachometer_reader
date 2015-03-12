@@ -108,12 +108,15 @@ void setup() {
   
   // INITIALIZE BUFFEREDSERIAL
   //serial.init(0, 115200);
-  serial.init(0, 9600);
-  serial.setPacketHandler(handlePacket);
-  send_buffer.init(64);
+  //serial.init(0, 9600);
+//  serial.setPacketHandler(handlePacket);
+//  send_buffer.init(64);
+  Serial.begin(9600);
+  
   
   pinMode(Ecu_Power, OUTPUT);
   pinMode(Esc_Power, OUTPUT);
+  pinMode(Gen_Esc_Rotor, OUTPUT);
   pinMode(Esc_Gen_Load, OUTPUT);
   pinMode(escThrottlePin, OUTPUT);
 
@@ -124,13 +127,14 @@ void setup() {
   start_sequence_servo.attach(escThrottlePin);
   engine_throttle_servo.attach(engine_throttle_pin);
   choke_servo.attach(choke_pin);
+  
   sei();
   
   vehicleState=1;
 }
 
 void loop() {
-  serial.update();
+  //serial.update();
   
   // START SECTION
   // This portion of the script outlines several conditions for
@@ -140,6 +144,7 @@ void loop() {
   if (vehicleState == 1) {
     
     digitalWrite(Esc_Gen_Load, HIGH);    // Switch Relays over to power motor
+    digitalWrite(Gen_Esc_Rotor, HIGH);    // Switch Relays over to power motor
     digitalWrite(Ecu_Power, HIGH);
     delay(MOTOR_INITIALIZATION_DELAY/4);   // Wait for ESC/Motor Response
     digitalWrite(Esc_Power, HIGH);        // Switch on ESC
@@ -158,10 +163,10 @@ void loop() {
   if (vehicleState == 2) {
     // 80% PWM   
     digitalWrite(DEBUG_LED,HIGH);
-    start_sequence_servo.write((int)(0.7*180));
+    start_sequence_servo.writeMicroseconds(2100);
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
-        if (tach_speed > startup_RPM_threshold) {
+        if (tach_speed > 3000){//startup_RPM_threshold) {
           digitalWrite(Esc_Power, LOW);        // Switch off ESC
           digitalWrite(Esc_Gen_Load, LOW);    // Switch Relays over to diode bridge
           start_sequence_servo.write(0);
@@ -173,7 +178,9 @@ void loop() {
   }
   
   if (vehicleState == 3) {
-    start_sequence_servo.write(0);
+    start_sequence_servo.write(0.25*180);
+    digitalWrite(Esc_Gen_Load, LOW);    // Switch Relays over to power motor
+    digitalWrite(Gen_Esc_Rotor, LOW); 
     if (controller_update_flag) {
       controller_update_flag = 0;
       if (!stopped_flag && timeFromLastPulse>0) {
@@ -181,6 +188,7 @@ void loop() {
         servo_angle = servo_angle + (uint8_t)(Kp*LSF*(setpoint_speed - tach_speed));
         servo_angle = min(max(servo_angle,LOWER_SERVO_TH),UPPER_SERVO_TH);
         //engine_throttle_servo.write(servo_angle);
+        Serial.println("done");
       } else {
         tach_speed = 0;
       }
@@ -195,29 +203,39 @@ void loop() {
     serial_write_counter = 0;
     
     // WRITE TO BUFFEREDSERIAL
-    send_buffer.clear();
-    send_buffer.putFloat((float)tach_speed);
-    send_buffer.putFloat((float)servo_angle);
-    send_buffer.putFloat((float)vehicleState);
-    serial.sendSerialPacket( &send_buffer );
+//    send_buffer.clear();
+//    send_buffer.putFloat((float)tach_speed);
+//    send_buffer.putFloat((float)servo_angle);
+//    send_buffer.putFloat((float)vehicleState);
+//    serial.sendSerialPacket( &send_buffer );
+    tach_speed = 3750000 / timeFromLastPulse;
+    Serial.print(stopped_flag);
+    Serial.print(" ");
+    Serial.println(tach_speed);
+    
   } 
 }
 
 //ISRs
 
 ISR(TIMER5_CAPT_vect) { // PULSE DETECTED 
+
+  
+  //digitalWrite(13,HIGH); 
+PORTB ^= 1 << PORTB7; //blink
   if(PINL & (1<<PL1)) { //check to see if rising or falling edge
     TCNT5 = 0;// restart timer for next revolution
-
+    
     if(!stopped_flag) { //from stop, dont calculate speed from first pulse
       timeFromLastPulse = ICR5;//H << 8 + ICR5L;      // save duration of last revolution   
     }
 
     stopped_flag=0; //if it was stopped, this pulse means it has started again, next pulse will report speed
-    PORTB ^= 1 << PORTB7; //blink
+    
 
     TCCR5B &= ~(1 << ICES5); //set the ICP to trigger on the falling edge
   } else {
+    
     lowPulseTime = ICR5;//records time at start of low pulse, doesnt reset timer
     TCCR5B |= 1 << ICES5; //set the ICP to trigger on the rising edge
   }  
