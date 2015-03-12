@@ -11,6 +11,7 @@ ByteBuffer send_buffer;
 volatile uint16_t timeFromLastPulse = 0;//holds value since last pulse
 volatile uint8_t stopped_flag = 0; 
 volatile uint16_t lowPulseTime = 0;
+volatile uint32_t current_time = 0;
 
 /*
 // Pin Configuration Section
@@ -40,6 +41,8 @@ const uint32_t callibration_delay = 20000;
 #define MOTOR_INITIALIZATION_DELAY 4000 //Delay for motor to recognize ESC
 const uint32_t startup_RPM_threshold = 1000;
 Servo start_sequence_servo;
+bool state_start=0;
+uint32_t state_start_time;
 
 //***PID***
 volatile uint32_t tach_speed = 0;
@@ -49,7 +52,7 @@ const float LSF = 0.002;
 const uint32_t UPPER_RPM_TH = 8000;
 const uint32_t LOWER_RPM_TH = 500;
 
-const uint32_t timer1_duration = 200000; // 20ms
+const uint32_t timer1_duration = 200000; // 20ms <- this is actually 200ms!
 volatile uint8_t serial_write_counter = 0;
 volatile uint8_t controller_update_flag = 0;
 const uint8_t serial_write_threshold = 1000000/timer1_duration - 1;
@@ -130,7 +133,8 @@ void setup() {
   
   sei();
   
-  vehicleState=1;
+  //vehicleState=1; //without using pc script, this is necessary to start to sequence
+  state_start=1;
 }
 
 void loop() {
@@ -160,16 +164,22 @@ void loop() {
     vehicleState = 2;    
   }
   
+  //Turn on ESC to max throttle, this state will overcome initial resistance and go up to ~500RPM
   if (vehicleState == 2) {
-    // 80% PWM   
-    digitalWrite(DEBUG_LED,HIGH);
-    start_sequence_servo.writeMicroseconds(2100);
+    
+    if(state_start == 1)
+    {
+      //PORTB ^= 1 << PORTB7; //blink
+      state_start_time = current_time;
+      state_start = 0;
+    }
+    
+    digitalWrite(DEBUG_LED,state_start);
+    start_sequence_servo.writeMicroseconds(2200);
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
-        if (tach_speed > 3000){//startup_RPM_threshold) {
-          digitalWrite(Esc_Power, LOW);        // Switch off ESC
-          digitalWrite(Esc_Gen_Load, LOW);    // Switch Relays over to diode bridge
-          start_sequence_servo.write(0);
+        if ((tach_speed > 500) && (current_time-state_start_time >7)){ //delay to allow motor to catch
+          state_start = 1;
           vehicleState = 3;
         }
       } else {
@@ -177,10 +187,36 @@ void loop() {
       }  
   }
   
-  if (vehicleState == 3) {
+  //Reduce ESC to ~half throttle until the engine takes over
+  if (vehicleState == 3) { 
+    
+    if(state_start == 1)
+    {
+      //PORTB ^= 1 << PORTB7; //blink
+      state_start_time = current_time;
+      state_start = 0;
+    }
+    
+    
+    
+    start_sequence_servo.writeMicroseconds(1500);
+    if (!stopped_flag && timeFromLastPulse>0) {
+        tach_speed = 3750000 / timeFromLastPulse;
+        if (tach_speed > 1700  && (current_time-state_start_time >7)){//startup_RPM_threshold) {
+          vehicleState = 4;
+        }
+      } else {
+        tach_speed = 0;
+      }  
+  }
+  
+  if (vehicleState == 4) {
     start_sequence_servo.write(0.25*180);
-    digitalWrite(Esc_Gen_Load, LOW);    // Switch Relays over to power motor
-    digitalWrite(Gen_Esc_Rotor, LOW); 
+    
+    digitalWrite(Esc_Power, LOW);
+    digitalWrite(Esc_Gen_Load, LOW);
+    digitalWrite(Gen_Esc_Rotor, LOW);
+    
     if (controller_update_flag) {
       controller_update_flag = 0;
       if (!stopped_flag && timeFromLastPulse>0) {
@@ -209,6 +245,8 @@ void loop() {
 //    send_buffer.putFloat((float)vehicleState);
 //    serial.sendSerialPacket( &send_buffer );
     tach_speed = 3750000 / timeFromLastPulse;
+    Serial.print(current_time);
+    Serial.print(" ");
     Serial.print(stopped_flag);
     Serial.print(" ");
     Serial.println(tach_speed);
@@ -222,7 +260,7 @@ ISR(TIMER5_CAPT_vect) { // PULSE DETECTED
 
   
   //digitalWrite(13,HIGH); 
-PORTB ^= 1 << PORTB7; //blink
+//PORTB ^= 1 << PORTB7; //blink
   if(PINL & (1<<PL1)) { //check to see if rising or falling edge
     TCNT5 = 0;// restart timer for next revolution
     
@@ -250,6 +288,7 @@ ISR(TIMER5_OVF_vect) { // counter overflow/timeout. Basically this will happen i
 void setFlags_Timer_ISR() { // trigger every certain amount of time
   controller_update_flag = 1;
   serial_write_counter += 1;
+  current_time++;
 }
 
 void handlePacket(ByteBuffer* packet) {
