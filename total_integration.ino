@@ -6,7 +6,8 @@
 #define clock_speed 16000000
 BufferedSerial serial = BufferedSerial(256, 256);
 ByteBuffer send_buffer;
-bool serial_mode = 0; // 1 = buffered serial, 0 = normal ASCII serial
+bool serial_mode = 1; // 1 = buffered serial, 0 = normal ASCII serial
+bool test_mode_servo_initialized = 1;
 
 //Use Arduino MEGA
 volatile uint16_t timeFromLastPulse = 0;//holds value since last pulse
@@ -56,10 +57,10 @@ const uint8_t serial_write_threshold = (1000000/5)/timer1_duration - 1; // 5 wri
 //Create object for servo library
 Servo engine_throttle_servo;
 Servo choke_servo;
-volatile uint8_t throttle_servo_angle = 0;
-volatile uint8_t choke_servo_angle=0;
-const uint8_t UPPER_THROTTLE_SERVO_TH = 150;
-const uint8_t LOWER_THROTTLE_SERVO_TH = 130;
+volatile uint16_t throttle_servo_angle = 0;
+volatile uint16_t choke_servo_angle=0;
+const uint8_t UPPER_THROTTLE_SERVO_TH = 840;
+const uint8_t LOWER_THROTTLE_SERVO_TH = 1420;
 const uint8_t UPPER_CHOKE_SERVO_TH = 150;
 const uint8_t LOWER_CHOKE_SERVO_TH = 130;
 
@@ -114,11 +115,11 @@ void setup() {
   pinMode(escThrottlePin, OUTPUT);
   
   if (serial_mode == 0) {
-    vehicleState=1; //without using pc script, this is necessary to start to sequence
+    vehicleState = 1; //without using pc script, this is necessary to start to sequence
   } else if (serial_mode == 1) { 
-    vehicleState=0;
+    vehicleState = 0;
   }
-  start_state=1;
+  start_state = 1;
 }
 
 void loop() {
@@ -138,7 +139,6 @@ void loop() {
       
       start_sequence_servo.writeMicroseconds(900);
       start_sequence_servo.attach(escThrottlePin);
-      engine_throttle_servo.attach(engine_throttle_pin);
       choke_servo.attach(choke_pin);
       
       sei();
@@ -149,7 +149,9 @@ void loop() {
     digitalWrite(Ecu_Power, HIGH);
     delay(MOTOR_INITIALIZATION_DELAY/4);   // Wait for ESC/Motor Response
     digitalWrite(Esc_Power, HIGH);        // Switch on ESC
+    
     delay(5000);
+    
     // 3% PWM           
     start_sequence_servo.writeMicroseconds(900);
     delay(callibration_delay);       
@@ -191,7 +193,7 @@ void loop() {
     start_sequence_servo.writeMicroseconds(1500);
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
-        if (tach_speed > 2100  && (current_time-start_state_time >70)){//startup_RPM_threshold) {
+        if (tach_speed > 2100  && (current_time-start_state_time > 70)){//startup_RPM_threshold) {
           vehicleState = 4;
         }
       } else {
@@ -200,7 +202,21 @@ void loop() {
   }
   
   if (vehicleState == 4) {
-    start_sequence_servo.write(0.25*180);
+    if (test_mode_servo_initialized == 1) {
+      
+      
+      sei();
+      engine_throttle_servo.attach(engine_throttle_pin);
+      cli();
+      
+      engine_throttle_servo.writeMicroseconds(LOWER_THROTTLE_SERVO_TH);
+    }
+    if (test_mode_servo_initialized == 0) {
+      engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
+    }
+    
+    
+    start_sequence_servo.writeMicroseconds(900);
     
     digitalWrite(Esc_Power, LOW);
     digitalWrite(Esc_Gen_Load, LOW);
@@ -210,9 +226,9 @@ void loop() {
       speed_controller_update_flag = 0;
       if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
-        throttle_servo_angle = throttle_servo_angle + (uint8_t)(Kp*LSF*(setpoint_speed - tach_speed));
-        throttle_servo_angle = min(max(throttle_servo_angle,LOWER_THROTTLE_SERVO_TH),UPPER_THROTTLE_SERVO_TH);
-        //engine_throttle_servo.write(throttle_servo_angle);
+        //throttle_servo_angle = throttle_servo_angle + (uint8_t)(Kp*LSF*(setpoint_speed - tach_speed));
+        //throttle_servo_angle = min(max(throttle_servo_angle,LOWER_THROTTLE_SERVO_TH),UPPER_THROTTLE_SERVO_TH);
+        engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
         if (serial_mode == 0) { Serial.println("done"); }
       } else {
         tach_speed = 0;
@@ -263,7 +279,6 @@ void loop() {
       Serial.print(vehicleState);
       Serial.print(" ");
       Serial.println(tach_speed);
-      
     }
   } 
 }
@@ -310,10 +325,10 @@ void handlePacket(ByteBuffer* packet) {
   send_buffer.clear();
   int protocol = (int)packet->getFloat();
   if (protocol == 1) {
-    throttle_servo_angle = (uint8_t)packet->getFloat();
-    throttle_servo_angle = min(max(throttle_servo_angle,LOWER_THROTTLE_SERVO_TH),UPPER_THROTTLE_SERVO_TH);
+    throttle_servo_angle = (uint16_t)packet->getFloat();
+    throttle_servo_angle = min(max(throttle_servo_angle,820),1420);
   } else if (protocol == 2) {
-    choke_servo_angle = (uint8_t)packet->getFloat();
+    choke_servo_angle = (uint16_t)packet->getFloat();
     choke_servo_angle = min(max(choke_servo_angle,LOWER_CHOKE_SERVO_TH),UPPER_CHOKE_SERVO_TH);
   } else if (protocol == 3) {
     setpoint_speed = (uint32_t)packet->getFloat();
