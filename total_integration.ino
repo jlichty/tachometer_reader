@@ -50,6 +50,9 @@ volatile uint8_t speed_controller_update_flag = 0;
 volatile uint8_t buck_controller_update_flag = 0;
 const uint8_t serial_write_threshold = (1000000/5)/timer1_duration - 1; // 5 writes/sec
 
+
+//maximum servo microseconds for engine throttle servo is 1420, this is mapped to min throttle
+//minimum servo microseconds for engine throttle servo is 840, this is mapped to max throttle
 //Create object for servo library
 Servo engine_throttle_servo;
 Servo choke_servo;
