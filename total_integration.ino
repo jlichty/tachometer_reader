@@ -6,7 +6,7 @@
 #define clock_speed 16000000
 BufferedSerial serial = BufferedSerial(256, 256);
 ByteBuffer send_buffer;
-bool serial_mode = 1; // 1 = buffered serial, 0 = normal ASCII serial
+bool serial_mode = 0; // 1 = buffered serial, 0 = normal ASCII serial
 
 //Use Arduino MEGA
 volatile uint16_t timeFromLastPulse = 0;//holds value since last pulse
@@ -116,8 +116,9 @@ void setup() {
   if (serial_mode == 0) {
     vehicleState=1; //without using pc script, this is necessary to start to sequence
   } else if (serial_mode == 1) { 
-    start_state=0;
+    vehicleState=0;
   }
+  start_state=1;
 }
 
 void loop() {
@@ -135,7 +136,7 @@ void loop() {
       
       cli();
       
-      start_sequence_servo.write((int)(0.03*180));
+      start_sequence_servo.writeMicroseconds(900);
       start_sequence_servo.attach(escThrottlePin);
       engine_throttle_servo.attach(engine_throttle_pin);
       choke_servo.attach(choke_pin);
@@ -148,9 +149,9 @@ void loop() {
     digitalWrite(Ecu_Power, HIGH);
     delay(MOTOR_INITIALIZATION_DELAY/4);   // Wait for ESC/Motor Response
     digitalWrite(Esc_Power, HIGH);        // Switch on ESC
-    
+    delay(5000);
     // 3% PWM           
-    start_sequence_servo.write((int)(0.25*180));
+    start_sequence_servo.writeMicroseconds(900);
     delay(callibration_delay);       
     
     vehicleState = 2;    
@@ -169,7 +170,7 @@ void loop() {
     start_sequence_servo.writeMicroseconds(2200);
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
-        if ((tach_speed > 500) && (current_time-start_state_time > 7)){ //delay to allow motor to catch
+        if ((tach_speed > 500) && (current_time-start_state_time > 100)){ //delay to allow motor to catch
           start_state = 1;
           vehicleState = 3;
         }
@@ -190,7 +191,7 @@ void loop() {
     start_sequence_servo.writeMicroseconds(1500);
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
-        if (tach_speed > 1700  && (current_time-start_state_time >7)){//startup_RPM_threshold) {
+        if (tach_speed > 2100  && (current_time-start_state_time >70)){//startup_RPM_threshold) {
           vehicleState = 4;
         }
       } else {
@@ -259,7 +260,10 @@ void loop() {
       Serial.print(" ");
       Serial.print(stopped_flag);
       Serial.print(" ");
+      Serial.print(vehicleState);
+      Serial.print(" ");
       Serial.println(tach_speed);
+      
     }
   } 
 }
