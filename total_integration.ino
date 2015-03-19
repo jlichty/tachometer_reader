@@ -7,7 +7,7 @@
 BufferedSerial serial = BufferedSerial(256, 256);
 ByteBuffer send_buffer;
 bool serial_mode = 1; // 1 = buffered serial, 0 = normal ASCII serial
-bool test_mode_servo_initialized = 1;
+bool test_mode_servo_initialized = 0;
 
 //Use Arduino MEGA
 volatile uint16_t timeFromLastPulse = 0;//holds value since last pulse
@@ -49,7 +49,7 @@ const uint32_t timer1_duration = 20000; // 20ms
 volatile uint8_t serial_write_counter = 0;
 volatile uint8_t speed_controller_update_flag = 0;
 volatile uint8_t buck_controller_update_flag = 0;
-const uint8_t serial_write_threshold = (1000000/5)/timer1_duration - 1; // 5 writes/sec
+const uint8_t serial_write_threshold = (1000000/2)/timer1_duration - 1; // 5 writes/sec
 
 
 //maximum servo microseconds for engine throttle servo is 1420, this is mapped to min throttle
@@ -59,8 +59,8 @@ Servo engine_throttle_servo;
 Servo choke_servo;
 volatile uint16_t throttle_servo_angle = 0;
 volatile uint16_t choke_servo_angle=0;
-const uint8_t UPPER_THROTTLE_SERVO_TH = 840;
-const uint8_t LOWER_THROTTLE_SERVO_TH = 1420;
+const uint16_t UPPER_THROTTLE_SERVO_TH = 840;
+const uint16_t LOWER_THROTTLE_SERVO_TH = 1420;
 const uint8_t UPPER_CHOKE_SERVO_TH = 150;
 const uint8_t LOWER_CHOKE_SERVO_TH = 130;
 
@@ -135,13 +135,13 @@ void loop() {
     if (!servos_initialized) {
       servos_initialized = true;
       
-      cli();
+      //cli();
       
       start_sequence_servo.writeMicroseconds(900);
       start_sequence_servo.attach(escThrottlePin);
       choke_servo.attach(choke_pin);
       
-      sei();
+      //sei();
     }
     
     digitalWrite(Esc_Gen_Load, HIGH);    // Switch Relays over to power motor
@@ -194,6 +194,10 @@ void loop() {
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
         if (tach_speed > 2100  && (current_time-start_state_time > 70)){//startup_RPM_threshold) {
+          start_sequence_servo.writeMicroseconds(900);
+          digitalWrite(Esc_Power, LOW);
+          digitalWrite(Esc_Gen_Load, LOW);
+          digitalWrite(Gen_Esc_Rotor, LOW);
           vehicleState = 4;
         }
       } else {
@@ -202,33 +206,36 @@ void loop() {
   }
   
   if (vehicleState == 4) {
-    if (test_mode_servo_initialized == 1) {
-      
-      
-      sei();
-      engine_throttle_servo.attach(engine_throttle_pin);
-      cli();
-      
-      engine_throttle_servo.writeMicroseconds(LOWER_THROTTLE_SERVO_TH);
-    }
     if (test_mode_servo_initialized == 0) {
+      test_mode_servo_initialized = 1;
+      
+      //throttle_servo_angle = LOWER_THROTTLE_SERVO_TH;
+      throttle_servo_angle = 1350;
+      engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
+      //sei();
+      engine_throttle_servo.attach(engine_throttle_pin);
+      //cli();
+
+      engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
+    }
+    if (test_mode_servo_initialized == 1) {
       engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
     }
     
-    
+    /*
     start_sequence_servo.writeMicroseconds(900);
     
     digitalWrite(Esc_Power, LOW);
     digitalWrite(Esc_Gen_Load, LOW);
     digitalWrite(Gen_Esc_Rotor, LOW);
-    
+    */
     if (speed_controller_update_flag) {
       speed_controller_update_flag = 0;
       if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
         //throttle_servo_angle = throttle_servo_angle + (uint8_t)(Kp*LSF*(setpoint_speed - tach_speed));
         //throttle_servo_angle = min(max(throttle_servo_angle,LOWER_THROTTLE_SERVO_TH),UPPER_THROTTLE_SERVO_TH);
-        engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
+        //engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
         if (serial_mode == 0) { Serial.println("done"); }
       } else {
         tach_speed = 0;
@@ -249,13 +256,13 @@ void loop() {
     
     delay(2000);
       
-    cli();
+    //cli();
     
     start_sequence_servo.detach();
     engine_throttle_servo.detach();
     choke_servo.detach();
     
-    sei();
+    //sei();
    
     servos_initialized = false;
     vehicleState = 0; 
