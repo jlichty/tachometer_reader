@@ -39,15 +39,16 @@ uint32_t start_state_time;
 
 //***PID***
 volatile uint32_t tach_speed = 0;
-uint32_t setpoint_speed = 7400;
-const float Kp = 1;
-const float LSF = 0.002;
+uint32_t setpoint_speed = 6000;
+const float Kp = 0.2;
+const float LSF = 1.0/25;
 const uint32_t UPPER_RPM_TH = 8000;
 const uint32_t LOWER_RPM_TH = 500;
 
 const uint32_t timer1_duration = 20000; // 20ms
 volatile uint8_t serial_write_counter = 0;
-volatile uint8_t speed_controller_update_flag = 0;
+volatile uint8_t speed_controller_update_counter = 0;
+const uint8_t speed_controller_update_threshold = (1000000/40)/timer1_duration - 1;
 volatile uint8_t buck_controller_update_flag = 0;
 const uint8_t serial_write_threshold = (1000000/2)/timer1_duration - 1; // 5 writes/sec
 
@@ -218,29 +219,23 @@ void loop() {
 
       engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
     }
+    
     if (test_mode_servo_initialized == 1) {
       engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
     }
     
-    /*
-    start_sequence_servo.writeMicroseconds(900);
     
-    digitalWrite(Esc_Power, LOW);
-    digitalWrite(Esc_Gen_Load, LOW);
-    digitalWrite(Gen_Esc_Rotor, LOW);
-    */
-    if (speed_controller_update_flag) {
-      speed_controller_update_flag = 0;
       if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
-        //throttle_servo_angle = throttle_servo_angle + (uint8_t)(Kp*LSF*(setpoint_speed - tach_speed));
-        //throttle_servo_angle = min(max(throttle_servo_angle,LOWER_THROTTLE_SERVO_TH),UPPER_THROTTLE_SERVO_TH);
-        //engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
+        if (speed_controller_update_counter >= speed_controller_update_threshold) {
+          speed_controller_update_counter = 0;
+          throttle_servo_angle = throttle_servo_angle - (uint16_t)(Kp*LSF*(setpoint_speed - tach_speed));
+          throttle_servo_angle = min(max(throttle_servo_angle,UPPER_THROTTLE_SERVO_TH),LOWER_THROTTLE_SERVO_TH);
+        }
         if (serial_mode == 0) { Serial.println("done"); }
       } else {
         tach_speed = 0;
       }
-    }
   }
   
   if (vehicleState == 5) {
@@ -322,7 +317,7 @@ ISR(TIMER5_OVF_vect) { // counter overflow/timeout. Basically this will happen i
 }     // engine stopped
 
 void setFlags_Timer_ISR() { // trigger every certain amount of time
-  speed_controller_update_flag = 1;
+  speed_controller_update_counter += 1;
   buck_controller_update_flag = 1;
   serial_write_counter += 1;
   current_time++;
@@ -333,7 +328,7 @@ void handlePacket(ByteBuffer* packet) {
   int protocol = (int)packet->getFloat();
   if (protocol == 1) {
     throttle_servo_angle = (uint16_t)packet->getFloat();
-    throttle_servo_angle = min(max(throttle_servo_angle,820),1420);
+    throttle_servo_angle = min(max(throttle_servo_angle,UPPER_THROTTLE_SERVO_TH),LOWER_THROTTLE_SERVO_TH);
   } else if (protocol == 2) {
     choke_servo_angle = (uint16_t)packet->getFloat();
     choke_servo_angle = min(max(choke_servo_angle,LOWER_CHOKE_SERVO_TH),UPPER_CHOKE_SERVO_TH);
