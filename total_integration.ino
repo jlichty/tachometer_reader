@@ -7,7 +7,7 @@
 BufferedSerial serial = BufferedSerial(256, 256);
 ByteBuffer send_buffer;
 bool serial_mode = 1; // 1 = buffered serial, 0 = normal ASCII serial
-bool test_mode_servo_initialized = 0;
+bool throttle_servo_initialized = 0;
 
 //Use Arduino MEGA
 volatile uint16_t timeFromLastPulse = 0;//holds value since last pulse
@@ -30,28 +30,33 @@ volatile uint32_t current_time = 0;
 //***START SEQUENCE***
 bool servos_initialized = false;
 volatile uint8_t vehicleState = 0;
-const uint32_t callibration_delay = 5000;
+const uint16_t callibration_delay = 5000;
 #define MOTOR_INITIALIZATION_DELAY 4000 //Delay for motor to recognize ESC
-const uint32_t startup_RPM_threshold = 1000;
+const uint16_t startup_RPM_threshold = 1000;
 Servo start_sequence_servo;
-bool start_state=0;
-uint32_t start_state_time;
+volatile bool start_state=0;
+volatile uint32_t start_state_time;
+
+//***TIMER ONE***
+const uint16_t timer1_duration = 2000; // 2ms
+volatile uint16_t serial_write_counter = 0;
+const uint16_t serial_write_threshold = (1000000/10)/timer1_duration - 1; // 10 writes/sec
 
 //***PID***
+volatile bool throttle_controller_enabled = false;
+volatile uint16_t throttle_controller_counter = 0;
+volatile uint16_t throttle_controller_threshold = (3000000/1)/timer1_duration - 1;
+volatile uint16_t last_RPM_average = 0;
+volatile uint16_t running_average_RPM = 0;
+volatile uint16_t RPM_measure_count = 0;
+volatile uint16_t RPM_measure_threshold = 20;
 volatile uint32_t tach_speed = 0;
-uint32_t setpoint_speed = 6000;
-const float Kp = 0.2;
-const float LSF = 1.0/25;
-const uint32_t UPPER_RPM_TH = 8000;
-const uint32_t LOWER_RPM_TH = 500;
-
-const uint32_t timer1_duration = 20000; // 20ms
-volatile uint8_t serial_write_counter = 0;
-volatile uint8_t speed_controller_update_counter = 0;
-const uint8_t speed_controller_update_threshold = (1000000/40)/timer1_duration - 1;
-volatile uint8_t buck_controller_update_flag = 0;
-const uint8_t serial_write_threshold = (1000000/2)/timer1_duration - 1; // 5 writes/sec
-
+uint16_t setpoint_speed = 7000;
+const float Kp = 1.0;
+const float LSF = 1.0/25; // 0.04
+const float Kp_LSF = Kp*LSF;
+const uint16_t UPPER_RPM_TH = 8000;
+const uint16_t LOWER_RPM_TH = 500;
 
 //maximum servo microseconds for engine throttle servo is 1420, this is mapped to min throttle
 //minimum servo microseconds for engine throttle servo is 840, this is mapped to max throttle
@@ -62,8 +67,8 @@ volatile uint16_t throttle_servo_angle = 0;
 volatile uint16_t choke_servo_angle=0;
 const uint16_t UPPER_THROTTLE_SERVO_TH = 840;
 const uint16_t LOWER_THROTTLE_SERVO_TH = 1420;
-const uint8_t UPPER_CHOKE_SERVO_TH = 150;
-const uint8_t LOWER_CHOKE_SERVO_TH = 130;
+const uint16_t UPPER_CHOKE_SERVO_TH = 150;
+const uint16_t LOWER_CHOKE_SERVO_TH = 130;
 
 void initialize_timers() {
   cli();//stop interrupts
@@ -207,8 +212,8 @@ void loop() {
   }
   
   if (vehicleState == 4) {
-    if (test_mode_servo_initialized == 0) {
-      test_mode_servo_initialized = 1;
+    if (throttle_servo_initialized == 0) {
+      throttle_servo_initialized = 1;
       
       //throttle_servo_angle = LOWER_THROTTLE_SERVO_TH;
       throttle_servo_angle = 1350;
@@ -218,24 +223,36 @@ void loop() {
       //cli();
 
       engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
+      delay(5000);
+      
+      throttle_controller_enabled = true;
     }
     
-    if (test_mode_servo_initialized == 1) {
+    if (throttle_servo_initialized == 1) {
       engine_throttle_servo.writeMicroseconds(throttle_servo_angle);
     }
     
-    
-      if (!stopped_flag && timeFromLastPulse>0) {
-        tach_speed = 3750000 / timeFromLastPulse;
-        if (speed_controller_update_counter >= speed_controller_update_threshold) {
-          speed_controller_update_counter = 0;
-          throttle_servo_angle = throttle_servo_angle - (uint16_t)(Kp*LSF*(setpoint_speed - tach_speed));
-          throttle_servo_angle = min(max(throttle_servo_angle,UPPER_THROTTLE_SERVO_TH),LOWER_THROTTLE_SERVO_TH);
-        }
-        if (serial_mode == 0) { Serial.println("done"); }
-      } else {
-        tach_speed = 0;
+    if (!stopped_flag && timeFromLastPulse>0) {
+      // measure the current RPM
+      tach_speed = 3750000 / timeFromLastPulse;
+      
+      RPM_measure_count += 1;
+      running_average_RPM += tach_speed;
+        
+      if (RPM_measure_count >= RPM_measure_threshold) {
+        last_RPM_average = running_average_RPM/RPM_measure_threshold;
+        RPM_measure_count = 0;
+        running_average_RPM = 0;
       }
+      
+      if (throttle_controller_counter >= throttle_controller_threshold) {
+          throttle_servo_angle = throttle_servo_angle - (uint16_t)(Kp_LSF*(setpoint_speed - last_RPM_average));
+          throttle_servo_angle = min(max(throttle_servo_angle,UPPER_THROTTLE_SERVO_TH),LOWER_THROTTLE_SERVO_TH);
+      }
+      if (serial_mode == 0) { Serial.println("done"); }
+    } else {
+      tach_speed = 0;
+    }
   }
   
   if (vehicleState == 5) {
@@ -269,6 +286,7 @@ void loop() {
       // WRITE TO BUFFEREDSERIAL
       send_buffer.clear();
       send_buffer.putFloat((float)tach_speed);
+      send_buffer.putFloat((float)last_RPM_average);
       send_buffer.putFloat((float)throttle_servo_angle);
       send_buffer.putFloat((float)vehicleState);
       serial.sendSerialPacket( &send_buffer );
@@ -317,10 +335,12 @@ ISR(TIMER5_OVF_vect) { // counter overflow/timeout. Basically this will happen i
 }     // engine stopped
 
 void setFlags_Timer_ISR() { // trigger every certain amount of time
-  speed_controller_update_counter += 1;
-  buck_controller_update_flag = 1;
   serial_write_counter += 1;
   current_time++;
+  
+  if (throttle_controller_enabled) {
+    throttle_controller_counter += 1;
+  }
 }
 
 void handlePacket(ByteBuffer* packet) {
@@ -333,10 +353,10 @@ void handlePacket(ByteBuffer* packet) {
     choke_servo_angle = (uint16_t)packet->getFloat();
     choke_servo_angle = min(max(choke_servo_angle,LOWER_CHOKE_SERVO_TH),UPPER_CHOKE_SERVO_TH);
   } else if (protocol == 3) {
-    setpoint_speed = (uint32_t)packet->getFloat();
+    setpoint_speed = (uint16_t)packet->getFloat();
     setpoint_speed = min(max(setpoint_speed,LOWER_RPM_TH),UPPER_RPM_TH);
   } else if (protocol == 4) {
-    vehicleState = (uint32_t)packet->getFloat();
+    vehicleState = (uint8_t)packet->getFloat();
     vehicleState = min(max(vehicleState,0),5);
   }
 }
