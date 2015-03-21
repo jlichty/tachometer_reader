@@ -246,8 +246,9 @@ void loop() {
       }
       
       if (throttle_controller_counter >= throttle_controller_threshold) {
-          throttle_servo_angle = throttle_servo_angle - (uint16_t)(Kp_LSF*(setpoint_speed - last_RPM_average));
-          throttle_servo_angle = min(max(throttle_servo_angle,UPPER_THROTTLE_SERVO_TH),LOWER_THROTTLE_SERVO_TH);
+        throttle_controller_counter = 0;
+        throttle_servo_angle = throttle_servo_angle - (uint16_t)(Kp_LSF*(setpoint_speed - last_RPM_average));
+        throttle_servo_angle = min(max(throttle_servo_angle,UPPER_THROTTLE_SERVO_TH),LOWER_THROTTLE_SERVO_TH);
       }
       if (serial_mode == 0) { Serial.println("done"); }
     } else {
