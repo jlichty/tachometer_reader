@@ -178,7 +178,7 @@ void loop() {
     start_sequence_servo.writeMicroseconds(2200);
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
-        if ((tach_speed > 500) && (current_time-start_state_time > 100)){ //delay to allow motor to catch
+        if ((tach_speed > 500) && (current_time-start_state_time > 1000)){ //delay to allow motor to catch
           start_state = 1;
           vehicleState = 3;
         }
@@ -199,7 +199,7 @@ void loop() {
     start_sequence_servo.writeMicroseconds(1500);
     if (!stopped_flag && timeFromLastPulse>0) {
         tach_speed = 3750000 / timeFromLastPulse;
-        if (tach_speed > 2100  && (current_time-start_state_time > 70)){//startup_RPM_threshold) {
+        if (tach_speed > 2100  && (current_time-start_state_time > 1400)){//startup_RPM_threshold) {
           start_sequence_servo.writeMicroseconds(900);
           digitalWrite(Esc_Power, LOW);
           digitalWrite(Esc_Gen_Load, LOW);
