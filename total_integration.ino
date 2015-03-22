@@ -47,7 +47,7 @@ volatile bool throttle_controller_enabled = false;
 volatile uint16_t throttle_controller_counter = 0;
 volatile uint16_t throttle_controller_threshold = (3000000/1)/timer1_duration - 1;
 volatile uint16_t last_RPM_average = 0;
-volatile uint16_t running_average_RPM = 0;
+volatile uint64_t running_average_RPM = 0;
 volatile uint16_t RPM_measure_count = 0;
 volatile uint16_t RPM_measure_threshold = 20;
 volatile uint32_t tach_speed = 0;
@@ -57,6 +57,10 @@ const float LSF = 1.0/25; // 0.04
 const float Kp_LSF = Kp*LSF;
 const uint16_t UPPER_RPM_TH = 8000;
 const uint16_t LOWER_RPM_TH = 500;
+float SETPOINT = 0;
+float AVERAGE = 0;
+float THROTTLE = 0;
+float NEW_THROTTLE = 0;
 
 //maximum servo microseconds for engine throttle servo is 1420, this is mapped to min throttle
 //minimum servo microseconds for engine throttle servo is 840, this is mapped to max throttle
@@ -247,7 +251,12 @@ void loop() {
       
       if (throttle_controller_counter >= throttle_controller_threshold) {
         throttle_controller_counter = 0;
-        throttle_servo_angle = throttle_servo_angle - (uint16_t)(Kp_LSF*(setpoint_speed - last_RPM_average));
+        SETPOINT = setpoint_speed;
+        AVERAGE = last_RPM_average;
+        THROTTLE = throttle_servo_angle;
+        NEW_THROTTLE = THROTTLE - Kp_LSF*(SETPOINT - AVERAGE);
+        throttle_servo_angle = (uint16_t)(NEW_THROTTLE); 
+        //throttle_servo_angle = throttle_servo_angle - (uint16_t)(Kp_LSF*(setpoint_speed - last_RPM_average));
         throttle_servo_angle = min(max(throttle_servo_angle,UPPER_THROTTLE_SERVO_TH),LOWER_THROTTLE_SERVO_TH);
       }
       if (serial_mode == 0) { Serial.println("done"); }
