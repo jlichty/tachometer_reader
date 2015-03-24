@@ -49,12 +49,12 @@ volatile uint16_t throttle_controller_threshold = (3000000/1)/timer1_duration - 
 volatile uint16_t last_RPM_average = 0;
 volatile uint64_t running_average_RPM = 0;
 volatile uint16_t RPM_measure_count = 0;
-volatile uint16_t RPM_measure_threshold = 20;
+volatile uint16_t RPM_measure_threshold = 10;
 volatile uint32_t tach_speed = 0;
 uint16_t setpoint_speed = 7000;
 const float Kp = 1.0;
 const float LSF = 1.0/25; // 0.04
-const float Kp_LSF = Kp*LSF;
+float Kp_LSF = Kp*LSF;
 const uint16_t UPPER_RPM_TH = 8000;
 const uint16_t LOWER_RPM_TH = 500;
 float SETPOINT = 0;
@@ -113,7 +113,7 @@ void setup() {
     //serial.init(0, 115200);
     serial.init(0, 9600);
     serial.setPacketHandler(handlePacket);
-    send_buffer.init(64);
+    send_buffer.init(32*5);
   } else if (serial_mode == 0) {
     Serial.begin(9600);
   }
@@ -255,7 +255,7 @@ void loop() {
         AVERAGE = last_RPM_average;
         THROTTLE = throttle_servo_angle;
         NEW_THROTTLE = THROTTLE - Kp_LSF*(SETPOINT - AVERAGE);
-        throttle_servo_angle = (uint16_t)(NEW_THROTTLE); 
+        //throttle_servo_angle = (uint16_t)(NEW_THROTTLE); 
         //throttle_servo_angle = throttle_servo_angle - (uint16_t)(Kp_LSF*(setpoint_speed - last_RPM_average));
         throttle_servo_angle = min(max(throttle_servo_angle,UPPER_THROTTLE_SERVO_TH),LOWER_THROTTLE_SERVO_TH);
       }
@@ -273,8 +273,8 @@ void loop() {
     digitalWrite(Esc_Power, LOW);
     
     start_sequence_servo.write(0);
-    engine_throttle_servo.write(LOWER_THROTTLE_SERVO_TH);
-    choke_servo.write(LOWER_CHOKE_SERVO_TH);
+    engine_throttle_servo.writeMicroseconds(LOWER_THROTTLE_SERVO_TH);
+    choke_servo.writeMicroseconds(LOWER_CHOKE_SERVO_TH);
     
     delay(2000);
       
@@ -299,6 +299,9 @@ void loop() {
       send_buffer.putFloat((float)last_RPM_average);
       send_buffer.putFloat((float)throttle_servo_angle);
       send_buffer.putFloat((float)vehicleState);
+      send_buffer.putFloat((float)setpoint_speed);
+      send_buffer.putFloat((float)throttle_controller_threshold);
+      send_buffer.putFloat((float)Kp_LSF);
       serial.sendSerialPacket( &send_buffer );
     } else if (serial_mode == 0) {
       tach_speed = 3750000 / timeFromLastPulse;
@@ -368,5 +371,9 @@ void handlePacket(ByteBuffer* packet) {
   } else if (protocol == 4) {
     vehicleState = (uint8_t)packet->getFloat();
     vehicleState = min(max(vehicleState,0),5);
+  } else if (protocol == 5) {
+    throttle_controller_threshold = (packet->getFloat())/timer1_duration - 1;
+  } else if (protocol == 6) {
+    Kp_LSF = packet->getFloat();
   }
 }
