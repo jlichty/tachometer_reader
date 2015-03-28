@@ -16,16 +16,19 @@ volatile uint16_t lowPulseTime = 0;
 volatile uint32_t current_time = 0;
 
 //relay pins
-#define Esc_Gen_Load A1 //HIGH: ESC powers the generator. LOW: Generator send power to rectifier.
-#define Gen_Esc_Rotor A2
-#define Esc_Power A3
-#define Ecu_Power A0
+#define Esc_Gen_Load 35 //HIGH: ESC powers the generator. LOW: Generator send power to rectifier.
+#define Gen_Esc_Rotor 37
+#define Esc_Power 39
+#define Ecu_Power 41
 
 //throttle pins
-#define engine_throttle_pin 9
-#define choke_pin 10
-#define escThrottlePin A4
+#define engine_throttle_pin A10
+#define choke_pin A11
+#define escThrottlePin A12
 #define DEBUG_LED 13
+
+//fans
+#define cooling_fan A13
 
 //***START SEQUENCE***
 bool servos_initialized = false;
@@ -45,13 +48,13 @@ const uint16_t serial_write_threshold = (1000000/10)/timer1_duration - 1; // 10 
 //***PID***
 volatile bool throttle_controller_enabled = false;
 volatile uint16_t throttle_controller_counter = 0;
-volatile uint16_t throttle_controller_threshold = (3000000/1)/timer1_duration - 1;
+volatile uint16_t throttle_controller_threshold = (200000)/timer1_duration - 1;
 volatile uint16_t last_RPM_average = 0;
 volatile uint64_t running_average_RPM = 0;
 volatile uint16_t RPM_measure_count = 0;
 volatile uint16_t RPM_measure_threshold = 10;
 volatile uint32_t tach_speed = 0;
-uint16_t setpoint_speed = 7000;
+uint16_t setpoint_speed = 7500;
 const float Kp = 1.0;
 const float LSF = 1.0/25; // 0.04
 float Kp_LSF = Kp*LSF;
