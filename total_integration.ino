@@ -6,7 +6,7 @@
 #define clock_speed 16000000
 BufferedSerial serial = BufferedSerial(256, 256);
 ByteBuffer send_buffer;
-bool serial_mode = 1; // 1 = buffered serial, 0 = normal ASCII serial
+bool serial_mode = 0; // 1 = buffered serial, 0 = normal ASCII serial
 bool throttle_servo_initialized = 0;
 
 //Use Arduino MEGA
@@ -22,9 +22,9 @@ volatile uint32_t current_time = 0;
 #define Ecu_Power 41
 
 //throttle pins
-#define engine_throttle_pin A10
-#define choke_pin A11
-#define escThrottlePin A12
+#define engine_throttle_pin A6
+#define choke_pin A7
+#define escThrottlePin A8
 #define DEBUG_LED 13
 
 //fans
